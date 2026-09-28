@@ -1,0 +1,116 @@
+# CI for telemetry-resilience: build the wheel, install it, and exercise the
+# installed CLI plus the unit test suite on all supported platforms.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    # Use bash on every OS so globs and quoting behave the same everywhere.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Build wheel and sdist
+        run: |
+          pip install build
+          python -m build
+
+      - name: Install the built wheel (not the source tree)
+        run: |
+          pip install dist/*.whl
+
+      - name: Doctor
+        run: telemetry-resilience doctor
+
+      - name: CLI smoke tests
+        run: |
+          telemetry-resilience --version
+          mkdir -p ci-smoke && cd ci-smoke
+          # Small synthetic dataset + fixtures (no network anywhere).
+          telemetry-resilience demo generate smoke.parquet --seconds 4 --hz 2
+          telemetry-resilience inspect smoke.parquet
+          cat > scenario.yaml <<'EOF'
+          version: 1
+          seed: 7
+          input:
+            file: smoke.parquet
+            time_column: timestamp
+          faults:
+            - channel: pressure
+              type: noise
+              start: 1s
+              duration: 2s
+              std: 0.5
+          EOF
+          telemetry-resilience inject smoke.parquet --scenario scenario.yaml
+          cat > suite.yaml <<'EOF'
+          version: 1
+          name: ci-suite
+          input:
+            file: smoke.parquet
+            time_column: timestamp
+          timeout_seconds: 60
+          baseline:
+            enabled: false
+          cases:
+            - name: pressure-noise
+              seed: 11
+              faults:
+                - channel: pressure
+                  type: noise
+                  start: 1s
+                  duration: 2s
+                  std: 0.5
+              expect:
+                exit_code: 0
+          EOF
+          cat > campaign.yaml <<'EOF'
+          version: 1
+          name: ci-campaign
+          seed: 5000
+          input:
+            file: smoke.parquet
+            time_column: timestamp
+          timeout_seconds: 60
+          window:
+            start: 1s
+            duration: 2s
+          baseline:
+            enabled: false
+          expect:
+            exit_code: 0
+          channels:
+            pressure:
+              noise:
+                std: [0.5]
+          EOF
+          TARGET=(python -c "print('ci target ran')" "{data}")
+          telemetry-resilience test scenario.yaml -- "${TARGET[@]}"
+          telemetry-resilience suite suite.yaml --dry-run -- "${TARGET[@]}"
+          telemetry-resilience suite suite.yaml --artifacts suite-artifacts -- "${TARGET[@]}"
+          telemetry-resilience campaign campaign.yaml --plan
+          telemetry-resilience campaign campaign.yaml --list-cases
+          telemetry-resilience campaign campaign.yaml --artifacts campaign-artifacts -- "${TARGET[@]}"
+          test -f campaign-artifacts/coverage.json
+          test -f campaign-artifacts/summary.json
+          test -f campaign-artifacts/junit.xml
+
+      - name: Unit tests
+        run: |
+          pip install ".[test]"
+          python -m pytest -q
