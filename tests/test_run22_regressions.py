@@ -337,7 +337,7 @@ def test_run22_junit_end_to_end_with_control_char_suite_name(
     result = _run(tmp_path, suite, [sys.executable, target, "{data}"],
                   "--artifacts", str(art))
     assert result.exit_code == 0, result.output
-    junit = (art / "junit.xml").read_text()
+    junit = (art / "junit.xml").read_text(encoding="utf-8")
     ET.fromstring(junit)  # must parse as valid XML
     assert "\x01" not in junit
 
@@ -364,11 +364,11 @@ def test_run22_non_utf8_stdout_and_stderr(tmp_path, telemetry_df):
                   "--artifacts", str(art))
     assert result.exit_code == 0, result.output
     assert "Traceback" not in result.output
-    stdout = (art / "c" / "stdout.txt").read_text()
-    stderr = (art / "c" / "stderr.txt").read_text()
+    stdout = (art / "c" / "stdout.txt").read_text(encoding="utf-8")
+    stderr = (art / "c" / "stderr.txt").read_text(encoding="utf-8")
     assert "hello\ufffdworld" in stdout
     assert "err\ufffd!" in stderr
-    ET.fromstring((art / "junit.xml").read_text())
+    ET.fromstring((art / "junit.xml").read_text(encoding="utf-8"))
 
 
 def test_run22_non_utf8_timeout_partial_output(tmp_path, telemetry_df):
@@ -387,7 +387,7 @@ def test_run22_non_utf8_timeout_partial_output(tmp_path, telemetry_df):
     assert result.exit_code == 1, result.output
     assert "Traceback" not in result.output
     assert "timed out" in result.output
-    ET.fromstring((art / "junit.xml").read_text())
+    ET.fromstring((art / "junit.xml").read_text(encoding="utf-8"))
 
 
 def test_run22_non_utf8_test_command(tmp_path, telemetry_df):
