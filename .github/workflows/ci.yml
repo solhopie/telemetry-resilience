@@ -30,13 +30,15 @@ jobs:
 
       # Packaging diagnostics: printed before the packaging tests so a
       # backend failure can be traced to the exact toolchain versions.
-      # (Keep concise: one line per tool.)
+      # (Keep concise: one line per tool. Probes are informational only and
+      # must not fail the job: e.g. `packaging` is not importable on some
+      # runners even though pip works fine.)
       - name: Packaging toolchain diagnostics
         run: |
           python --version
           python -m pip --version
-          python -c "import setuptools; print('setuptools', setuptools.__version__)"
-          python -c "import packaging; print('packaging', packaging.__version__)"
+          python -c "import setuptools; print('setuptools', setuptools.__version__)" 2>/dev/null || echo "setuptools: not installed"
+          python -c "import packaging; print('packaging', packaging.__version__)" 2>/dev/null || echo "packaging: not installed"
           python -c "import wheel; print('wheel', wheel.__version__)" 2>/dev/null || echo "wheel: not installed"
           pip install -q build
           python -c "import build; print('build', build.__version__)"
