@@ -1,0 +1,39 @@
+name: publish
+
+# Publishes telemetry-resilience to PyPI via Trusted Publishing (OIDC).
+# No API tokens are stored anywhere: PyPI trusts this repository + workflow
+# through a pending publisher registered on pypi.org.
+#
+# Trigger: manually from the Actions tab, or automatically on a v* tag push.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write  # required for PyPI Trusted Publishing (OIDC)
+
+jobs:
+  build-and-publish:
+    name: build and publish to PyPI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build backend
+        run: python -m pip install --upgrade pip build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Uses OIDC trusted publishing; no username/password/token needed.
