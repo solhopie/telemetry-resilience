@@ -512,3 +512,12 @@ configured. It does not certify that a physical system is safe or reliable,
 and its coverage numbers measure test outcomes, not system safety.
 Corrupted outputs are synthetic test data — never feed them back as real
 telemetry.
+
+## Commercial support
+
+Telemetry Resilience is free and open source (Apache 2.0). If your team
+needs help putting it to work — integrating it into CI, designing fault
+scenarios for your telemetry, or support adopting it — commercial support
+and integration engagements are available.
+
+Contact: Hopiedavis1@icloud.com
