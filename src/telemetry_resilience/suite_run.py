@@ -195,7 +195,9 @@ def _read_artifact_marker(artifacts_dir: Path):
     ``owned_entries`` list; anything else is treated as "not ours".
     """
     try:
-        data = json.loads((artifacts_dir / ARTIFACT_MARKER).read_text())
+        data = json.loads(
+            (artifacts_dir / ARTIFACT_MARKER).read_text(encoding="utf-8")
+        )
     except (OSError, ValueError):
         return None
     if not isinstance(data, dict):
@@ -224,7 +226,8 @@ def _write_artifact_marker(artifacts_dir: Path, owned_entries: list) -> None:
                 "owned_entries": sorted(owned_entries),
             }
         )
-        + "\n"
+        + "\n",
+        encoding="utf-8",
     )
 
 
@@ -492,10 +495,10 @@ def run_suite(
                 try:
                     baseline_dir.mkdir(parents=True, exist_ok=True)
                     (baseline_dir / "stdout.txt").write_text(
-                        baseline_res["stdout"]
+                        baseline_res["stdout"], encoding="utf-8"
                     )
                     (baseline_dir / "stderr.txt").write_text(
-                        baseline_res["stderr"]
+                        baseline_res["stderr"], encoding="utf-8"
                     )
                     write_json(
                         baseline_dir / "result.json",
@@ -566,8 +569,12 @@ def run_suite(
                         case_dir / "faults.json",
                         build_manifest(scenario, suite.input_file, entries),
                     )
-                    (case_dir / "stdout.txt").write_text(res["stdout"])
-                    (case_dir / "stderr.txt").write_text(res["stderr"])
+                    (case_dir / "stdout.txt").write_text(
+                        res["stdout"], encoding="utf-8"
+                    )
+                    (case_dir / "stderr.txt").write_text(
+                        res["stderr"], encoding="utf-8"
+                    )
                     write_json(
                         case_dir / "result.json",
                         _case_payload(case, res, len(entries), baseline_res),
@@ -668,10 +675,12 @@ def _write_summary_artifacts(
             failed,
             len(case_payloads),
             status,
-        )
+        ),
+        encoding="utf-8",
     )
     (artifacts_dir / "junit.xml").write_text(
-        render_junit_xml(suite.name, case_payloads, baseline_payload)
+        render_junit_xml(suite.name, case_payloads, baseline_payload),
+        encoding="utf-8",
     )
     # The run completed: refresh the ownership marker with the entries this
     # run actually created, so later --overwrite-artifacts decisions rest on

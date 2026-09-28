@@ -1,5 +1,12 @@
 [build-system]
-requires = ["setuptools>=68"]
+# Minimum setuptools is 77, not 68: setuptools < 77 rejects
+# `license = "Apache-2.0"` (PEP 639 SPDX expression) during
+# get_requires_for_build_sdist with
+# "invalid pyproject.toml config: `project.license`" -- observed on
+# macOS/Windows Python 3.11 runners whose ambient setuptools predates 77.
+# 77 is the first release whose vendored pyproject validation accepts the
+# SPDX license expression string (verified: 76.1.0 rejects, 77.0.1 accepts).
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]

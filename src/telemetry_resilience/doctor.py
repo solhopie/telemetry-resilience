@@ -140,8 +140,8 @@ def _missing_pyarrow() -> None:
 def _temp_writable(tmpdir: Path) -> None:
     """A temporary directory can be created and written to."""
     probe = tmpdir / "writable.probe"
-    probe.write_text("ok")
-    if probe.read_text() != "ok":
+    probe.write_text("ok", encoding="utf-8")
+    if probe.read_text(encoding="utf-8") != "ok":
         raise AssertionError("could not read back probe file")
     probe.unlink()
 

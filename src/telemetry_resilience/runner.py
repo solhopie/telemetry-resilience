@@ -19,6 +19,26 @@ import time
 from dataclasses import dataclass
 
 
+def decode_process_output(data: bytes | str | None) -> str:
+    """Decode captured subprocess output bytes as UTF-8.
+
+    Platform-independent by construction: stdout/stderr are always captured
+    in binary mode and decoded here as UTF-8 with ``errors="replace"``, so
+    invalid bytes (e.g. ``b"\\xff"``) become U+FFFD on every platform.
+
+    Never rely on ``text=True`` / ``universal_newlines=True`` (which decode
+    with :func:`locale.getpreferredencoding` -- on Windows that is the
+    console/default code page, where ``0xFF`` is the valid character
+    ``ÿ`` instead of U+FFFD). ``str`` input passes through unchanged and
+    ``None`` becomes ``""``.
+    """
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data
+    return data.decode("utf-8", errors="replace")
+
+
 @dataclass
 class TargetResult:
     """Outcome of one target-process execution."""
@@ -51,27 +71,27 @@ def run_target(cmd: list, timeout_seconds: float) -> TargetResult:
     """
     t0 = time.perf_counter()
     try:
-        # errors="replace": engineering targets and native binaries can
-        # emit malformed UTF-8; decode it to U+FFFD instead of raising
-        # UnicodeDecodeError (which would misreport a config error).
+        # Binary capture + explicit UTF-8 decode (see decode_process_output):
+        # engineering targets and native binaries can emit malformed UTF-8,
+        # which must decode to U+FFFD instead of raising UnicodeDecodeError
+        # (which would misreport a config error). text=True is deliberately
+        # avoided -- it would decode with the platform locale encoding, so
+        # the same bytes would produce different text on Windows vs
+        # macOS/Linux.
         proc = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
-            errors="replace",
             timeout=timeout_seconds,
         )
     except subprocess.TimeoutExpired as exc:
         duration = time.perf_counter() - t0
-        stdout = exc.stdout
-        stderr = exc.stderr
-        if isinstance(stdout, bytes):
-            stdout = stdout.decode("utf-8", errors="replace")
-        if isinstance(stderr, bytes):
-            stderr = stderr.decode("utf-8", errors="replace")
+        # With binary capture these are bytes; decode identically to the
+        # normal path so timeout partial output matches on all platforms.
+        stdout = decode_process_output(exc.stdout)
+        stderr = decode_process_output(exc.stderr)
         return TargetResult(
-            stdout=stdout or "",
-            stderr=stderr or "",
+            stdout=stdout,
+            stderr=stderr,
             exit_code=None,
             duration_seconds=duration,
             timed_out=True,
@@ -96,8 +116,8 @@ def run_target(cmd: list, timeout_seconds: float) -> TargetResult:
         )
     duration = time.perf_counter() - t0
     return TargetResult(
-        stdout=proc.stdout,
-        stderr=proc.stderr,
+        stdout=decode_process_output(proc.stdout),
+        stderr=decode_process_output(proc.stderr),
         exit_code=proc.returncode,
         duration_seconds=duration,
         timeout_seconds=float(timeout_seconds),

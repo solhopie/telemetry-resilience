@@ -412,6 +412,104 @@ def test_run22_non_utf8_test_command(tmp_path, telemetry_df):
 
 
 # ---------------------------------------------------------------------------
+# 4b. platform-independent process-output decoding (CI compatibility fix)
+# ---------------------------------------------------------------------------
+#
+# Regression section for the Windows decoding bug: with text=True,
+# subprocess output was decoded with locale.getpreferredencoding(), so on
+# Windows b"\xff" became "ÿ" (cp1252) instead of U+FFFD. Capture is now
+# binary everywhere and decode_process_output() applies UTF-8/replace
+# explicitly, so the same bytes decode identically on every platform.
+
+
+def test_decode_process_output_replaces_invalid_utf8():
+    decode = runner_module.decode_process_output
+    assert decode(b"hello\xffworld") == "hello\ufffdworld"
+    assert decode(b"\xfe") == "\ufffd"
+    assert decode(b"") == ""
+    assert decode(b"plain ascii") == "plain ascii"
+    # Multi-byte UTF-8 still decodes as UTF-8 (not latin-1/cp1252).
+    assert decode("héllo".encode("utf-8")) == "héllo"
+
+
+def test_decode_process_output_str_and_none_passthrough():
+    decode = runner_module.decode_process_output
+    assert decode("already text") == "already text"
+    assert decode(None) == ""
+
+
+def test_decode_process_output_is_not_locale_decoding():
+    # Documents the exact Windows failure mode: cp1252 decodes 0xFF as
+    # "ÿ" (valid character, no replacement). The product contract is
+    # UTF-8 with replacement -- never the platform code page.
+    assert runner_module.decode_process_output(b"\xff") == "\ufffd"
+    assert runner_module.decode_process_output(b"\xff") != b"\xff".decode(
+        "cp1252"
+    )
+
+
+def test_run_target_never_uses_text_mode():
+    # Static guard: reintroducing text=True / universal_newlines would
+    # silently reintroduce the Windows code-page decoding bug. Token-based
+    # so mentions inside docstrings/comments do not trip it.
+    import io
+    import tokenize
+
+    src = Path(runner_module.__file__).read_text(encoding="utf-8")
+    toks = [
+        (tok.type, tok.string)
+        for tok in tokenize.generate_tokens(io.StringIO(src).readline)
+    ]
+    for a, b, c in zip(toks, toks[1:], toks[2:]):
+        assert not (
+            a == (tokenize.NAME, "text")
+            and b == (tokenize.OP, "=")
+            and c == (tokenize.NAME, "True")
+        ), "text=True must not be used for process output capture"
+    assert not any(
+        ttype == tokenize.NAME and tstr == "universal_newlines"
+        for ttype, tstr in toks
+    ), "universal_newlines must not be used for process output capture"
+
+
+def test_run_target_decodes_bad_bytes_identically():
+    # End-to-end through run_target: invalid bytes become U+FFFD even when
+    # the platform default encoding would decode them differently.
+    result = runner_module.run_target(
+        [sys.executable, "-c",
+         "import sys;"
+         "sys.stdout.buffer.write(bytes([104, 105, 255]));"
+         "sys.stderr.buffer.write(bytes([101, 254, 33]))"],
+        timeout_seconds=30,
+    )
+    assert result.exit_code == 0
+    assert result.stdout == "hi\ufffd"
+    assert result.stderr == "e\ufffd!"
+
+
+def test_junit_xml_written_as_valid_utf8_bytes(tmp_path, telemetry_df):
+    # The Windows charmap crash: junit.xml containing U+FFFD (from the
+    # sanitized control-character suite name) must be written as UTF-8
+    # bytes -- the platform default encoding (cp1252) cannot encode U+FFFD.
+    _setup(tmp_path, telemetry_df)
+    target = _target(tmp_path, "t.py", "print('ok')\n")
+    suite = _suite_dict([_passing_case()], baseline=False,
+                        name="bad\x01suite")
+    art = tmp_path / "art"
+    result = _run(tmp_path, suite, [sys.executable, target, "{data}"],
+                  "--artifacts", str(art))
+    assert result.exit_code == 0, result.output
+    raw = (art / "junit.xml").read_bytes()
+    text = raw.decode("utf-8")  # strict: must be valid UTF-8
+    assert text.startswith('<?xml version="1.0" encoding="utf-8"?>')
+    ET.fromstring(text)
+    assert "\x01" not in text
+    # stdout.txt artifacts with replacement chars are UTF-8 too.
+    for name in ("summary.json", "summary.md"):
+        (art / name).read_bytes().decode("utf-8")
+
+
+# ---------------------------------------------------------------------------
 # 5. untracked files in owned artifact directories
 # ---------------------------------------------------------------------------
 

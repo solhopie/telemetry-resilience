@@ -60,7 +60,9 @@ def write(df: pd.DataFrame, path: PathLike) -> None:
         "columns": {c: str(df[c].dtype) for c in df.columns},
         "time_column": time_column,
     }
-    sidecar_path(path).write_text(json.dumps(sidecar, indent=2) + "\n")
+    sidecar_path(path).write_text(
+        json.dumps(sidecar, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 def read(path: PathLike) -> pd.DataFrame:
@@ -79,7 +81,7 @@ def read(path: PathLike) -> pd.DataFrame:
     schema = None
     for candidate in candidates:
         if candidate.exists():
-            schema = json.loads(candidate.read_text())
+            schema = json.loads(candidate.read_text(encoding="utf-8"))
             break
 
     if schema is not None:

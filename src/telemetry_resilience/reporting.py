@@ -17,7 +17,11 @@ from pathlib import Path
 
 
 def write_summary_json(path, payload: dict) -> None:
-    Path(path).write_text(json.dumps(payload, indent=2, default=str) + "\n")
+    # Explicit UTF-8: payloads can carry U+FFFD from decoded target output,
+    # which the Windows default code page (cp1252) cannot encode.
+    Path(path).write_text(
+        json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8"
+    )
 
 
 # Valid XML 1.0 characters (https://www.w3.org/TR/xml/#charsets):

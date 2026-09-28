@@ -7,7 +7,11 @@ Covers:
   ``telemetry_resilience.__version__`` all agree;
 - clean build input: a fake stale module placed only under ``build/lib``
   cannot enter the release wheel (acceptance test per spec section 2),
-  and the clean-source-copy helper excludes stale generated output;
+  and the clean-source-copy helper excludes stale generated output.
+  The acceptance build runs in a hermetic venv whose setuptools satisfies
+  the declared ``[build-system]`` floor, so the test never depends on
+  whatever setuptools the ambient runner happens to ship
+  (setuptools < 77 rejects ``license = "Apache-2.0"``);
 - release_check.py never copies repository examples into the wheel smoke
   test (static regression guard for spec section 1: the inject smoke test
   must use the exact degraded_navigation.yaml produced by the installed
@@ -27,7 +31,9 @@ import importlib.metadata as importlib_metadata
 import importlib.util
 import re
 import shutil
+import subprocess
 import sys
+import tomllib
 import zipfile
 from pathlib import Path
 
@@ -39,6 +45,87 @@ from typer.testing import CliRunner
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RELEASE_CHECK = REPO_ROOT / "scripts" / "release_check.py"
+
+
+def _build_system_requires() -> list:
+    """The declared [build-system] requires from pyproject.toml.
+
+    The hermetic build venv installs exactly these, so the test always
+    honors the project's own declared build floor (currently
+    ``setuptools>=77`` -- older setuptools rejects the PEP 639 SPDX
+    ``license = "Apache-2.0"`` expression).
+    """
+    with open(REPO_ROOT / "pyproject.toml", "rb") as fh:
+        return list(tomllib.load(fh)["build-system"]["requires"])
+
+
+def _provision_build_venv(rc, venv_dir: Path):
+    """Create a venv with ``build`` + the declared build-system requires.
+
+    Returns the venv's python, or None when provisioning is impossible
+    (e.g. no network to install the toolchain): the caller must skip,
+    not fail, in that case.
+    """
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "venv", str(venv_dir)],
+            check=True,
+            capture_output=True,
+            timeout=180,
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    venv_py = rc._venv_python(venv_dir)
+    try:
+        subprocess.run(
+            [str(venv_py), "-m", "pip", "install", "-q",
+             "build", *_build_system_requires()],
+            check=True,
+            capture_output=True,
+            timeout=900,
+        )
+        subprocess.run(
+            [str(venv_py), "-c",
+             "import build.__main__, setuptools.build_meta"],
+            check=True,
+            capture_output=True,
+            timeout=120,
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    return venv_py
+
+
+@pytest.fixture(autouse=True)
+def _restore_tree_debris_state():
+    """Regression guard for test isolation.
+
+    A packaging test must clean up the build debris it creates in the
+    repo tree. Snapshot the debris-relevant state before each test;
+    afterwards, remove anything NEW the test left behind (so one failure
+    cannot cascade into the hygiene test) and fail with a clear message.
+    """
+
+    def _snapshot() -> set:
+        found = set()
+        if (REPO_ROOT / "build").exists():
+            found.add("build/")
+        for egg_info in (REPO_ROOT / "src").glob("*.egg-info"):
+            found.add(f"src/{egg_info.name}/")
+        return found
+
+    before = _snapshot()
+    yield
+    new_debris = sorted(_snapshot() - before)
+    for entry in new_debris:
+        target = REPO_ROOT / entry.rstrip("/")
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+        else:
+            target.unlink(missing_ok=True)
+    assert not new_debris, (
+        f"test left build debris in the repo tree: {new_debris}"
+    )
 
 
 def _load_release_check():
@@ -111,18 +198,19 @@ def test_stale_build_lib_excluded_from_wheel(tmp_path):
 
     1. create a fake stale module only under build/lib
     2. perform the release build (clean source copy, --no-isolation)
+       inside a hermetic venv whose setuptools satisfies the declared
+       [build-system] floor -- never the ambient runner toolchain
     3. inspect the wheel
     4. the stale module must NOT appear; METADATA version must agree
        with telemetry_resilience.__version__.
     """
-    # `build.__main__` (not just `build`): a leftover repo/build/ directory
-    # would satisfy `import build` as a namespace package but cannot run
-    # `python -m build`.
-    pytest.importorskip("build.__main__", reason="`python -m build` is required")
-    pytest.importorskip(
-        "setuptools.build_meta"
-    )  # --no-isolation needs the setuptools backend in this env
     rc = _load_release_check()
+    venv_py = _provision_build_venv(rc, tmp_path / "build-venv")
+    if venv_py is None:
+        pytest.skip(
+            "could not provision an isolated build venv "
+            "(venv creation or toolchain install failed)"
+        )
     stale = (
         REPO_ROOT / "build" / "lib" / "telemetry_resilience" / "stale_only_module.py"
     )
@@ -136,7 +224,7 @@ def test_stale_build_lib_excluded_from_wheel(tmp_path):
         shutil.copytree(dist_dir, backup)
     try:
         wheel, _sdist = rc.clean_build(
-            Path(sys.executable), REPO_ROOT, tmp_path / "out", no_isolation=True
+            Path(venv_py), REPO_ROOT, tmp_path / "out", no_isolation=True
         )
         with zipfile.ZipFile(wheel) as zf:
             names = zf.namelist()

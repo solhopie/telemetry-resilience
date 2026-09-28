@@ -35,4 +35,6 @@ def build_report(
 
 def write_json(path, payload):
     """Write a JSON payload with 2-space indent (non-serializables via str)."""
-    Path(path).write_text(json.dumps(payload, indent=2, default=str))
+    Path(path).write_text(
+        json.dumps(payload, indent=2, default=str), encoding="utf-8"
+    )

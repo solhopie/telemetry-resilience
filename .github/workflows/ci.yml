@@ -1,5 +1,8 @@
-# CI for telemetry-resilience: build the wheel, install it, and exercise the
-# installed CLI plus the unit test suite on all supported platforms.
+# CI for telemetry-resilience: unit tests run against the clean source tree
+# first, then the wheel/sdist are built in a separate temporary working
+# copy and the installed CLI is smoke-tested. Build debris must never be
+# created inside the checkout before pytest runs, because
+# test_handoff_tree_has_no_generated_build_debris asserts a clean tree.
 name: ci
 
 on:
@@ -25,20 +28,58 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Build wheel and sdist
+      # Packaging diagnostics: printed before the packaging tests so a
+      # backend failure can be traced to the exact toolchain versions.
+      # (Keep concise: one line per tool.)
+      - name: Packaging toolchain diagnostics
         run: |
-          pip install build
+          python --version
+          python -m pip --version
+          python -c "import setuptools; print('setuptools', setuptools.__version__)"
+          python -c "import packaging; print('packaging', packaging.__version__)"
+          python -c "import wheel; print('wheel', wheel.__version__)" 2>/dev/null || echo "wheel: not installed"
+          pip install -q build
+          python -c "import build; print('build', build.__version__)"
+
+      # Install test dependencies from a pristine temp copy of the commit.
+      # Installing from the checkout itself would leave build/ and
+      # src/*.egg-info behind and break the clean-tree hygiene test below.
+      - name: Install test dependencies (checkout stays clean)
+        run: |
+          TEST_SRC="$(mktemp -d)"
+          git archive HEAD | tar -x -C "$TEST_SRC"
+          pip install "$TEST_SRC[test]"
+          rm -rf "$TEST_SRC"
+
+      - name: Unit tests (clean source tree)
+        run: python -m pytest -q
+
+      # The release/hygiene tests must also pass on their own, independent
+      # of the rest of the suite's ordering or side effects.
+      - name: Packaging tests, standalone
+        run: python -m pytest tests/test_run42_packaging.py -q
+
+      # All packaging work happens in a separate working copy so the
+      # checkout that pytest observed stays pristine.
+      - name: Build wheel and sdist (separate working copy)
+        run: |
+          BUILD_SRC="$(mktemp -d)"
+          git archive HEAD | tar -x -C "$BUILD_SRC"
+          cd "$BUILD_SRC"
           python -m build
+          echo "BUILD_SRC=$BUILD_SRC" >> "$GITHUB_ENV"
 
       - name: Install the built wheel (not the source tree)
         run: |
-          pip install dist/*.whl
+          WHEELS=("$BUILD_SRC"/dist/*.whl)
+          pip install "${WHEELS[0]}"
 
       - name: Doctor
         run: telemetry-resilience doctor
 
       - name: CLI smoke tests
         run: |
+          cd "$BUILD_SRC"
           telemetry-resilience --version
           mkdir -p ci-smoke && cd ci-smoke
           # Small synthetic dataset + fixtures (no network anywhere).
@@ -110,7 +151,13 @@ jobs:
           test -f campaign-artifacts/summary.json
           test -f campaign-artifacts/junit.xml
 
-      - name: Unit tests
+      # The workflow must not create build debris in the checkout: fail if
+      # build/, *.egg-info or dist/ show up in git status.
+      - name: Verify checkout has no build debris
         run: |
-          pip install ".[test]"
-          python -m pytest -q
+          git status --short
+          if git status --short | grep -Eq 'build/|egg-info|dist/'; then
+            echo "ERROR: unexpected build debris in the checkout"
+            exit 1
+          fi
+          echo "checkout clean: no build debris"
