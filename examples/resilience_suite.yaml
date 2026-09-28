@@ -1,0 +1,87 @@
+# Example resilience suite: navigation failure modes for a demo consumer app.
+#
+# Run:
+#   telemetry-resilience suite examples/resilience_suite.yaml \
+#     --artifacts examples/results --keep-data \
+#     -- python examples/demo_app.py {data}
+#
+# The demo app prints DEGRADED_MODE when it sees missing values in
+# motor_temperature / imu_z / gps_latitude, SPIKE_DETECTED on large rpm
+# jumps, and NOMINAL otherwise (always exits 0 on readable data).
+version: 1
+name: navigation-resilience
+
+input:
+  file: demo_drive.parquet
+  time_column: timestamp
+
+timeout_seconds: 60
+
+baseline:
+  enabled: true
+  expect:
+    exit_code: 0
+
+cases:
+  - name: gps-dropout
+    seed: 1001
+    faults:
+      - channel: gps_latitude
+        type: dropout
+        start: 30s
+        duration: 10s
+    expect:
+      exit_code: 0
+      stdout_contains:
+        - DEGRADED_MODE
+
+  - name: motor-temperature-drift
+    seed: 1002
+    faults:
+      - channel: motor_temperature
+        type: drift
+        start: 60s
+        duration: 20s
+        rate: 0.5
+    expect:
+      exit_code: 0
+      stderr_not_contains:
+        - Traceback
+
+  - name: pressure-noise
+    seed: 1003
+    faults:
+      - channel: pressure
+        type: noise
+        start: 90s
+        duration: 20s
+        std: 0.8
+    expect:
+      exit_code: 0
+      stdout_not_contains:
+        - Traceback
+
+  - name: imu-rate-loss
+    seed: 1004
+    faults:
+      - channel: imu_z
+        type: sample_rate
+        start: 120s
+        duration: 20s
+        from: 10Hz
+        to: 2Hz
+    expect:
+      exit_code: 0
+      stdout_contains:
+        - DEGRADED_MODE
+
+  - name: timestamp-jitter
+    seed: 1005
+    faults:
+      - type: timestamp_jitter
+        start: 200s
+        duration: 10s
+        max_jitter_ms: 80
+    expect:
+      exit_code: 0
+      max_duration_seconds: 30

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
+*.egg-info/
+attack_evidence*/
+examples/results*
+examples/campaign_results*
+examples/*.corrupted.parquet
+examples/*.faults.json
+examples/*.report.json
+RUN-*-attack-outcomes.txt

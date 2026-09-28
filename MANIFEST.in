@@ -1,0 +1,24 @@
+include LICENSE
+include CHANGELOG.md
+include README.md
+include CONTRIBUTING.md
+include SECURITY.md
+
+# Demo templates (src/telemetry_resilience/templates/) ship in the sdist.
+recursive-include src/telemetry_resilience/templates *
+
+# Example inputs and deterministic configs ship; generated run outputs do not.
+graft examples
+prune examples/results
+prune examples/campaign_results
+prune examples/results_run22_demo
+global-exclude *.corrupted.parquet
+global-exclude *.faults.json
+global-exclude *.report.json
+prune attack_evidence_run22
+
+# Never ship bytecode or caches.
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .pytest_cache
+global-exclude .venv

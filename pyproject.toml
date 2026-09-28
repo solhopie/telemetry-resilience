@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "telemetry-resilience"
+dynamic = ["version"]
+description = "Test how telemetry-driven software behaves when sensor data goes bad."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{name = "Telemetry Resilience contributors"}]
+requires-python = ">=3.11"
+keywords = [
+    "telemetry",
+    "fault-injection",
+    "chaos-engineering",
+    "testing",
+    "iot",
+    "robotics",
+    "sensor-data",
+    "resilience",
+    "mutation-testing",
+]
+# NOTE: only the generic "Python :: 3" classifier is claimed here.
+# Version-specific classifiers (3.11 / 3.12 / 3.13) and OS-specific claims
+# stay out until the GitHub Actions matrix has actually executed.
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "typer>=0.9",
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "pyarrow>=13.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[project.scripts]
+telemetry-resilience = "telemetry_resilience.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# The single authoritative version lives in
+# src/telemetry_resilience/__init__.py as __version__. It is read statically
+# (AST, no package import) during the build, so no runtime dependencies are
+# needed just to determine the version.
+[tool.setuptools.dynamic]
+version = {attr = "telemetry_resilience.__version__"}
+
+# Demo assets (demo_app.py, navigation_campaign.yaml, degraded_navigation.yaml,
+# README.md) under src/telemetry_resilience/templates/ ship in both the wheel
+# and the sdist.
+[tool.setuptools.package-data]
+"telemetry_resilience" = ["templates/*"]

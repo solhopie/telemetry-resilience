@@ -1,0 +1,96 @@
+# Telemetry mutation campaign: navigation-mutations.
+#
+# What it is: a compact description of 17 deterministic single-fault mutation
+# cases over the demo drive telemetry (demo_drive.parquet, in this
+# directory). Each listed parameter variant expands into exactly ONE
+# isolated single-fault case; multi-fault combinations are never generated.
+#
+# Case count: gps_latitude 2+1+2=5, motor_temperature 2+2=4,
+#             pressure 2+1=3, imu_z 1, timeline 2+2=4  -> 17 total
+#             (under the default max of 100 cases).
+#
+# NOTE: demo_drive.parquet is synthetic, non-authoritative telemetry for
+# fault-injection demos only -- not physically accurate data. It is a clean
+# baseline (no missing values), so the demo app prints exactly NOMINAL on
+# unmutated data.
+#
+# Validate, expand and preflight without executing anything (from this dir):
+#   telemetry-resilience campaign navigation_campaign.yaml --plan
+#
+# Print the generated case IDs (with parameters and seeds) and exit:
+#   telemetry-resilience campaign navigation_campaign.yaml --list-cases
+#
+# Run the full campaign against the demo app (from this dir):
+#   telemetry-resilience campaign navigation_campaign.yaml \
+#     --artifacts resilience-results \
+#     -- python demo_app.py "{data}"
+#
+# Every campaign case inherits the campaign-level default expectations:
+# exit code 0 and no Traceback on stderr. Fault-specific stdout_contains
+# assertions exist ONLY where the injected fault actually makes the app
+# report a degraded condition:
+#   - gps_latitude dropout introduces NaN, so the app prints
+#     "DEGRADED_MODE: gps dropout detected" (asserted on the dropout fault).
+#   - imu_z sample_rate downsampling (10Hz -> 2Hz) leaves gaps in imu_z, so
+#     the app prints "DEGRADED_MODE: imu_z sample-rate degradation detected"
+#     (asserted on the sample_rate fault).
+# All other fault types (gps freeze/noise, motor_temperature drift/bias,
+# pressure spike/noise, timestamp_gap/timestamp_jitter) leave the app's
+# monitored columns without NaN, so they assert the default clean-execution
+# expectations (exit 0, no traceback) via inheritance.
+
+version: 1
+name: navigation-mutations
+seed: 5000
+input:
+  file: demo_drive.parquet
+  time_column: timestamp
+timeout_seconds: 60
+baseline:
+  enabled: true
+  expect:
+    exit_code: 0
+window:
+  start: 30s
+  duration: 10s
+expect:
+  exit_code: 0
+  stderr_not_contains:
+    - Traceback
+channels:
+  gps_latitude:
+    dropout:
+      durations: [2s, 10s]
+      expect:
+        stdout_contains:
+          - "DEGRADED_MODE: gps dropout detected"
+    freeze:
+      durations: [5s]
+    noise:
+      std: [0.0001, 0.001]
+  motor_temperature:
+    drift:
+      rates: [0.1, 0.5]
+      duration: 20s
+    bias:
+      offsets: [-5, 5]
+  pressure:
+    spike:
+      magnitudes: [10, 50]
+      directions: [positive]
+      duration: 2s
+    noise:
+      std: [0.5]
+  imu_z:
+    sample_rate:
+      transitions:
+        - {from: 10Hz, to: 2Hz}
+      expect:
+        stdout_contains:
+          - "DEGRADED_MODE: imu_z sample-rate degradation detected"
+timeline:
+  timestamp_gap:
+    durations: [1s, 5s]
+  timestamp_jitter:
+    max_jitter_ms: [20, 100]
+    duration: 15s

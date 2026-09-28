@@ -1,0 +1,41 @@
+version: 1
+seed: 3811
+input:
+  file: demo_drive.parquet
+  time_column: timestamp
+faults:
+  - channel: gps_latitude
+    type: dropout
+    start: 90s
+    duration: 12s
+  - channel: motor_temperature
+    type: drift
+    start: 120s
+    duration: 30s
+    rate: 0.4
+  - channel: imu_z
+    type: sample_rate
+    start: 180s
+    duration: 20s
+    from: 10Hz
+    to: 2Hz
+  - channel: pressure
+    type: noise
+    start: 60s
+    duration: 20s
+    std: 0.8
+  - channel: rpm
+    type: spike
+    start: 200s
+    duration: 10s
+    magnitude: 400
+    direction: positive
+    # spike is a float-only op: cast the Int64 column to float32 first
+    # (the engine refuses to silently change dtypes without an explicit cast)
+    cast: float32
+expect:
+  exit_code: 0
+  stdout_contains:
+    - DEGRADED_MODE
+  stderr_not_contains:
+    - Traceback

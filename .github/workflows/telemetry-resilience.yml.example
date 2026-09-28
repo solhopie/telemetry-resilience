@@ -1,0 +1,42 @@
+# Minimal copyable example: run a telemetry mutation campaign in your own CI.
+#
+# This is NOT a GitHub Marketplace Action. Copy this file into your own
+# repository's .github/workflows/ directory (dropping the `.example`
+# suffix), then point it at YOUR campaign YAML and YOUR target command:
+# the command after `--` runs against each fault-injected dataset, with
+# `{data}` replaced by the path to the corrupted telemetry file.
+#
+# No secrets and no cloud services are involved: the package is installed
+# from PyPI and everything runs locally on the runner.
+
+name: telemetry-resilience
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  mutation-campaign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install telemetry-resilience
+        run: pip install telemetry-resilience
+
+      - name: Run mutation campaign
+        run: |
+          telemetry-resilience campaign tests/resilience.yaml \
+            --artifacts resilience-results \
+            -- python app.py "{data}"
+
+      - name: Upload campaign artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resilience-results
+          path: resilience-results
