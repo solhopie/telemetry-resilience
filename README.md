@@ -482,9 +482,13 @@ Example: a `spike` on the nullable-`Int64` `rpm` channel needs
 
 ## CI status
 
-Cross-platform CI matrix prepared for: Python 3.11 / 3.12 / 3.13,
-Ubuntu / macOS / Windows (see `.github/workflows/ci.yml`).
-Status: NOT YET EXECUTED IN GITHUB ACTIONS.
+Cross-platform CI matrix (Python 3.11 / 3.12 / 3.13 × Ubuntu / macOS / Windows,
+see `.github/workflows/ci.yml`) is verified green: 9/9 jobs pass. Each job
+runs the full test suite (377 passed, 4 skipped — the skips are pre-existing
+packaging tests that require a `dist/` build to be present), the standalone
+packaging regression tests (5 passed), a wheel/sdist build from a separate
+source copy, a wheel-only install with `doctor` and CLI smoke tests, and a
+checkout debris check.
 
 ## Dependencies and licenses
 

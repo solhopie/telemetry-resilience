@@ -16,7 +16,7 @@ pip install -e ".[test]"
 pytest
 ```
 
-All 316 tests (as of 0.1.0) must pass before a change is merged. Run the full
+The full test suite must pass before a change is merged. Run the full
 suite; there is no separate fast path.
 
 ## Adding a new fault operator

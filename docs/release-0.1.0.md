@@ -53,7 +53,8 @@ telemetry-resilience campaign examples/navigation_campaign.yaml \
 
 ## CI status
 
-Cross-platform CI matrix prepared for: Python 3.11 / 3.12 / 3.13,
-Ubuntu / macOS / Windows. Status: NOT YET EXECUTED IN GITHUB ACTIONS.
+Cross-platform CI matrix (Python 3.11 / 3.12 / 3.13 × Ubuntu / macOS / Windows)
+is verified green: 9/9 jobs pass, each running the full test suite plus the
+standalone packaging regression tests.
 
 **This is an early developer release. It does not certify physical-system safety.**
