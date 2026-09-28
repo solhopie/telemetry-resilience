@@ -46,11 +46,16 @@ jobs:
       # Install test dependencies from a pristine temp copy of the commit.
       # Installing from the checkout itself would leave build/ and
       # src/*.egg-info behind and break the clean-tree hygiene test below.
+      # The temp dir is created by Python (pathlib.as_posix) so the path is
+      # native on every OS: Windows-native pip cannot resolve msys-style
+      # /tmp/... paths, and the [test] extras suffix then misparses as a
+      # requirement specifier.
       - name: Install test dependencies (checkout stays clean)
         run: |
-          TEST_SRC="$(mktemp -d)"
+          TEST_SRC="$(python -c 'import pathlib, tempfile; print(pathlib.Path(tempfile.mkdtemp()).as_posix())')"
           git archive HEAD | tar -x -C "$TEST_SRC"
-          pip install "$TEST_SRC[test]"
+          cd "$TEST_SRC"
+          pip install ".[test]"
           rm -rf "$TEST_SRC"
 
       - name: Unit tests (clean source tree)
@@ -62,10 +67,11 @@ jobs:
         run: python -m pytest tests/test_run42_packaging.py -q
 
       # All packaging work happens in a separate working copy so the
-      # checkout that pytest observed stays pristine.
+      # checkout that pytest observed stays pristine. The temp dir is
+      # created by Python so the path is native on every OS (see above).
       - name: Build wheel and sdist (separate working copy)
         run: |
-          BUILD_SRC="$(mktemp -d)"
+          BUILD_SRC="$(python -c 'import pathlib, tempfile; print(pathlib.Path(tempfile.mkdtemp()).as_posix())')"
           git archive HEAD | tar -x -C "$BUILD_SRC"
           cd "$BUILD_SRC"
           python -m build
@@ -73,8 +79,8 @@ jobs:
 
       - name: Install the built wheel (not the source tree)
         run: |
-          WHEELS=("$BUILD_SRC"/dist/*.whl)
-          pip install "${WHEELS[0]}"
+          WHEEL="$(python -c 'import glob, os; print(glob.glob(os.path.join(os.environ["BUILD_SRC"], "dist", "*.whl"))[0])')"
+          pip install "$WHEEL"
 
       - name: Doctor
         run: telemetry-resilience doctor
